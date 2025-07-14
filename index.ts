@@ -172,7 +172,7 @@ async function fetchWeatherForecast(lat: number, lng: number, count: number) {
   return data;
 }
 
-const FetchLocationCoordinatesSchema = z.array(
+const LocationCoordinatesResponseSchema = z.array(
   z.object({
     name: z.string(),
     lat: z.number(),
@@ -187,7 +187,7 @@ async function fetchLocationCoordinates(location: string) {
     `${WEATHER_API_URL}/geo/1.0/direct?q=${location}&limit=1&appid=${env.WEATHER_API_KEY}`,
   );
 
-  const data = FetchLocationCoordinatesSchema.parse(await response.json());
+  const data = LocationCoordinatesResponseSchema.parse(await response.json());
   return { lat: data[0]?.lat, lng: data[0]?.lon };
 }
 

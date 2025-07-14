@@ -1,0 +1,113 @@
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { z } from "zod";
+
+const WEATHER_API_URL = "https://api.openweathermap.org";
+
+const env = z
+  .object({
+    WEATHER_API_KEY: z.string(),
+  })
+  .parse(process.env);
+
+// Create server instance
+const server = new McpServer({
+  name: "weather",
+  version: "1.0.0",
+  capabilities: {
+    resources: {},
+    tools: {},
+  },
+});
+
+server.registerTool(
+  "fetch-weather",
+  {
+    title: "Weather Fetcher",
+    description: "Get weather data for a city",
+    inputSchema: { city: z.string() },
+  },
+  async ({ city: location }) => {
+    const { lat, lng } = await fetchLocationCoordinates(location);
+    if (!lat || !lng) {
+      return {
+        content: [{ type: "text", text: "Failed to retrieve weather info" }],
+      };
+    }
+
+    const weatherInfo = await fetchCurrentWeather(lat, lng);
+    const text = `Current weather in ${weatherInfo.name} is ${weatherInfo.weather[0]?.description} with a temperature of ${weatherInfo.main.temp} and it feels like ${weatherInfo.main.feels_like}.`;
+
+    return {
+      content: [{ type: "text", text }],
+    };
+  },
+);
+
+const FetchCurrentWeatherSchema = z.object({
+  coord: z.object({ lon: z.number(), lat: z.number() }).required(),
+  weather: z.array(
+    z
+      .object({
+        id: z.number(),
+        main: z.string(),
+        description: z.string(),
+        icon: z.string(),
+      })
+      .required(),
+  ),
+  base: z.string(),
+  main: z
+    .object({
+      temp: z.number(),
+      feels_like: z.number(),
+      temp_min: z.number(),
+      temp_max: z.number(),
+      pressure: z.number(),
+      humidity: z.number(),
+      sea_level: z.number(),
+      grnd_level: z.number(),
+    })
+    .required(),
+  name: z.string(),
+});
+
+async function fetchCurrentWeather(lat: number, lng: number) {
+  const params = new URLSearchParams({
+    lat: lat.toString(),
+    lon: lng.toString(),
+    appid: env.WEATHER_API_KEY,
+    units: "metric",
+  });
+  const response = await fetch(`${WEATHER_API_URL}/data/2.5/weather?${params}`);
+
+  const data = FetchCurrentWeatherSchema.parse(await response.json());
+  return data;
+}
+
+const FetchLocationCoordinatesSchema = z.array(
+  z.object({
+    name: z.string(),
+    lat: z.number(),
+    lon: z.number(),
+    country: z.string(),
+    state: z.string(),
+  }),
+);
+
+async function fetchLocationCoordinates(location: string) {
+  const response = await fetch(
+    `${WEATHER_API_URL}/geo/1.0/direct?q=${location}&limit=1&appid=${env.WEATHER_API_KEY}`,
+  );
+
+  const data = FetchLocationCoordinatesSchema.parse(await response.json());
+  return { lat: data[0]?.lat, lng: data[0]?.lon };
+}
+
+try {
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+  console.log("Weather mcp server running on stdio");
+} catch (error) {
+  console.error("Failed to run mcp server", error);
+}
